@@ -4,11 +4,11 @@ import { IsBoolean, IsInt, IsNotEmpty, IsOptional, IsUUID } from 'class-validato
 export class MarkAttendanceDto {
   @ApiProperty({ description: 'The attendance session being marked' })
   @IsNotEmpty()
-  sessionId: string;
+  sessionId!: string;
 
   @ApiProperty({ description: 'The token currently shown in the lecturer\'s QR code' })
   @IsNotEmpty()
-  qrToken: string;
+  qrToken!: string;
 
   @ApiProperty({
     required: false,

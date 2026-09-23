@@ -1,4 +1,9 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -7,7 +12,11 @@ import { Course } from '../courses/entities/course.entity';
 import { Enrollment } from '../courses/entities/enrollment.entity';
 import { AttendanceRecord } from '../attendance/entities/attendance-record.entity';
 import { SessionStatus } from '../../common/enums/session-status.enum';
-import { generateQrToken, generateSessionSecret, secondsUntilNextRotation } from './utils/totp.util';
+import {
+  generateQrToken,
+  generateSessionSecret,
+  secondsUntilNextRotation,
+} from './utils/totp.util';
 
 @Injectable()
 export class SessionsService {
@@ -15,25 +24,35 @@ export class SessionsService {
     @InjectRepository(AttendanceSession)
     private readonly sessionsRepo: Repository<AttendanceSession>,
     @InjectRepository(Course) private readonly coursesRepo: Repository<Course>,
-    @InjectRepository(Enrollment) private readonly enrollmentsRepo: Repository<Enrollment>,
+    @InjectRepository(Enrollment)
+    private readonly enrollmentsRepo: Repository<Enrollment>,
     @InjectRepository(AttendanceRecord)
     private readonly recordsRepo: Repository<AttendanceRecord>,
     private readonly config: ConfigService,
   ) {}
 
+  // ────────────────────────────────────────────────────────────────────
+  // START
+  // ────────────────────────────────────────────────────────────────────
   async startSession(lecturerId: string, courseId: string) {
-    const course = await this.coursesRepo.findOne({ where: { id: courseId } });
+    const course = await this.coursesRepo.findOne({
+      where: { id: courseId },
+    });
     if (!course) throw new NotFoundException('Course not found.');
     if (course.lecturerId !== lecturerId) {
       throw new ForbiddenException('You do not have access to this course.');
     }
 
+    // Resume if already active.
     const alreadyActive = await this.sessionsRepo.findOne({
       where: { courseId, status: SessionStatus.ACTIVE },
+      relations: ['course'],
     });
     if (alreadyActive) return this.toPublic(alreadyActive);
 
-    const totalStudents = await this.enrollmentsRepo.count({ where: { courseId } });
+    const totalStudents = await this.enrollmentsRepo.count({
+      where: { courseId },
+    });
 
     const session = this.sessionsRepo.create({
       courseId,
@@ -43,15 +62,29 @@ export class SessionsService {
       startedAt: new Date(),
     });
     const saved = await this.sessionsRepo.save(session);
-    return this.toPublic(saved);
+
+    // Reload with the course relation so toPublic can flatten fields.
+    const reloaded = await this.sessionsRepo.findOne({
+      where: { id: saved.id },
+      relations: ['course'],
+    });
+    return this.toPublic(reloaded!);
   }
 
+  // ────────────────────────────────────────────────────────────────────
+  // PAUSE / RESUME
+  // ────────────────────────────────────────────────────────────────────
   async pauseSession(lecturerId: string, sessionId: string) {
     const session = await this.findOwned(sessionId, lecturerId);
     session.status = SessionStatus.PAUSED;
     session.pausedAt = new Date();
     const saved = await this.sessionsRepo.save(session);
-    return this.toPublic(saved);
+
+    const reloaded = await this.sessionsRepo.findOne({
+      where: { id: saved.id },
+      relations: ['course'],
+    });
+    return this.toPublic(reloaded!);
   }
 
   async resumeSession(lecturerId: string, sessionId: string) {
@@ -59,9 +92,17 @@ export class SessionsService {
     session.status = SessionStatus.ACTIVE;
     session.pausedAt = undefined;
     const saved = await this.sessionsRepo.save(session);
-    return this.toPublic(saved);
+
+    const reloaded = await this.sessionsRepo.findOne({
+      where: { id: saved.id },
+      relations: ['course'],
+    });
+    return this.toPublic(reloaded!);
   }
 
+  // ────────────────────────────────────────────────────────────────────
+  // END
+  // ────────────────────────────────────────────────────────────────────
   /**
    * Ends the session and bumps `classesHeld` for every enrolled student
    * (whether or not they attended) — this is what drives the course's
@@ -87,13 +128,22 @@ export class SessionsService {
     return this.summary(session);
   }
 
+  // ────────────────────────────────────────────────────────────────────
+  // LOOKUPS
+  // ────────────────────────────────────────────────────────────────────
   async findById(sessionId: string): Promise<AttendanceSession> {
-    const session = await this.sessionsRepo.findOne({ where: { id: sessionId } });
+    const session = await this.sessionsRepo.findOne({
+      where: { id: sessionId },
+      relations: ['course'],
+    });
     if (!session) throw new NotFoundException('Session not found.');
     return session;
   }
 
-  async findOwned(sessionId: string, lecturerId: string): Promise<AttendanceSession> {
+  async findOwned(
+    sessionId: string,
+    lecturerId: string,
+  ): Promise<AttendanceSession> {
     const session = await this.findById(sessionId);
     if (session.course.lecturerId !== lecturerId) {
       throw new ForbiddenException('You do not have access to this session.');
@@ -101,19 +151,47 @@ export class SessionsService {
     return session;
   }
 
-  /** Sessions for courses the lecturer teaches, scheduled for today's weekday. */
+  /**
+   * Sessions for courses the lecturer teaches that are either scheduled
+   * for today's weekday OR have a live (active) session right now.
+   */
   async findTodaySessionsForLecturer(lecturerId: string) {
-    const weekday = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-    const courses = await this.coursesRepo.find({
-      where: { lecturerId, scheduleDay: weekday },
+    const weekday = new Date().toLocaleDateString('en-US', {
+      weekday: 'long',
     });
+
+    // All courses taught by this lecturer.
+    const allCourses = await this.coursesRepo.find({
+      where: { lecturerId },
+    });
+
+    // Courses with an active session right now, regardless of schedule.
+    const activeSessions = await this.sessionsRepo.find({
+      where: { status: SessionStatus.ACTIVE },
+      relations: ['course'],
+    });
+
+    const activeCourseIds = new Set(
+      activeSessions
+        .filter((s) => s.course.lecturerId === lecturerId)
+        .map((s) => s.courseId),
+    );
+
+    // Today's list = scheduled-today OR has-active-session.
+    const courses = allCourses.filter(
+      (c) => c.scheduleDay === weekday || activeCourseIds.has(c.id),
+    );
 
     const sessions = await Promise.all(
       courses.map(async (course) => {
         const active = await this.sessionsRepo.findOne({
           where: { courseId: course.id, status: SessionStatus.ACTIVE },
         });
-        const totalStudents = await this.enrollmentsRepo.count({ where: { courseId: course.id } });
+
+        const totalStudents = await this.enrollmentsRepo.count({
+          where: { courseId: course.id },
+        });
+
         const presentCount = active ? await this.presentCount(active.id) : 0;
 
         return {
@@ -133,20 +211,49 @@ export class SessionsService {
     return sessions;
   }
 
+  // ────────────────────────────────────────────────────────────────────
+  // QR TOKEN
+  // ────────────────────────────────────────────────────────────────────
+  /**
+   * Returns the current rotating QR payload for a session. The payload
+   * is a JSON string containing both `sessionId` and `token`, so the
+   * student's scanner has everything needed to POST /attendance/mark.
+   */
   async qrToken(lecturerId: string, sessionId: string) {
     const session = await this.findOwnedWithSecret(sessionId, lecturerId);
     if (session.status !== SessionStatus.ACTIVE) {
-      throw new ConflictException('QR codes are only available while the session is active.');
+      throw new ConflictException(
+        'QR codes are only available while the session is active.',
+      );
     }
-    const timeStep = this.config.get<number>('attendance.qrRotationSeconds')!;
+
+    const timeStep =
+      this.config.get<number>('attendance.qrRotationSeconds') ?? 30;
+    const token = generateQrToken(session.qrSecret, timeStep);
+
+    // The QR image encodes this JSON. The student's app parses it to
+    // extract sessionId + token, then sends them in the POST body.
+    const qrPayload = JSON.stringify({
+      sessionId: session.id,
+      token,
+    });
+    console.log('GEN secret:', session.qrSecret, 'token:', token);
+
     return {
-      token: generateQrToken(session.qrSecret, timeStep),
+      token,
+      qrPayload,
       secondsUntilRefresh: secondsUntilNextRotation(timeStep),
     };
   }
 
+  // ────────────────────────────────────────────────────────────────────
+  // SECRET ACCESS
+  // ────────────────────────────────────────────────────────────────────
   /** Includes the normally-hidden qrSecret column — for internal use only. */
-  async findOwnedWithSecret(sessionId: string, lecturerId: string): Promise<AttendanceSession> {
+  async findOwnedWithSecret(
+    sessionId: string,
+    lecturerId: string,
+  ): Promise<AttendanceSession> {
     const session = await this.sessionsRepo
       .createQueryBuilder('session')
       .addSelect('session.qrSecret')
@@ -176,10 +283,21 @@ export class SessionsService {
     return this.recordsRepo.count({ where: { sessionId } });
   }
 
-  /** Strips the never-to-leave-the-server qrSecret before returning to a controller. */
+  // ────────────────────────────────────────────────────────────────────
+  // SERIALIZATION
+  // ────────────────────────────────────────────────────────────────────
+  /** Strips qrSecret and flattens course fields for the client. */
   private toPublic(session: AttendanceSession) {
-    const { qrSecret, ...rest } = session as AttendanceSession & { qrSecret?: string };
-    return rest;
+    const { qrSecret, course, ...rest } = session as any;
+    return {
+      ...rest,
+      courseCode: course?.code ?? '',
+      courseTitle: course?.title ?? '',
+      timeRangeLabel: course
+        ? `${course.scheduleStartTime} – ${course.scheduleEndTime}`
+        : '',
+      venue: course?.venue ?? '',
+    };
   }
 
   private async summary(session: AttendanceSession) {
@@ -192,7 +310,8 @@ export class SessionsService {
       totalStudents: total,
       presentCount: present,
       absentCount: total - present,
-      attendanceRate: total === 0 ? 0 : Math.round((present / total) * 1000) / 10,
+      attendanceRate:
+        total === 0 ? 0 : Math.round((present / total) * 1000) / 10,
       startedAt: session.startedAt,
       endedAt: session.endedAt,
     };
