@@ -33,6 +33,7 @@ export class AuthController {
     return this.authService.login(dto.identifier, dto.password);
   }
 
+  @Public()
   @Get('ping-server')
   pingServer(){
     return this.authService.pingServer();
