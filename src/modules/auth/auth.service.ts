@@ -43,4 +43,11 @@ export class AuthService {
       user: await this.usersService.toProfile(user),
     };
   }
+
+  async pingServer(){
+    return {
+      success: true,
+      message: 'Server Ready'
+    }
+  }
 }

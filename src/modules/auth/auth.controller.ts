@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterStudentDto } from './dto/register-student.dto';
@@ -31,5 +31,10 @@ export class AuthController {
   @ApiOperation({ summary: 'Log in with email/Student ID/Staff ID + password' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto.identifier, dto.password);
+  }
+
+  @Get('ping-server')
+  pingServer(){
+    return this.authService.pingServer();
   }
 }
