@@ -105,12 +105,21 @@ export class UsersService {
 
   /** Computes overall attendance % across all of a student's enrollments. */
   async overallAttendancePercentage(studentId: string): Promise<number> {
-    const enrollments = await this.enrollmentsRepo.find({ where: { studentId } });
-    const totalHeld = enrollments.reduce((sum, e) => sum + e.classesHeld, 0);
-    const totalAttended = enrollments.reduce((sum, e) => sum + e.classesAttended, 0);
-    if (totalHeld === 0) return 0;
-    return Math.round((totalAttended / totalHeld) * 1000) / 10;
+  const enrollments = await this.enrollmentsRepo.find({ where: { studentId } });
+
+  let totalHeld = 0;
+  let totalAttended = 0;
+
+  for (const e of enrollments) {
+    // Guard: attended can never exceed held for a single course.
+    const attended = Math.min(e.classesAttended, e.classesHeld);
+    totalHeld += e.classesHeld;
+    totalAttended += attended;
   }
+
+  if (totalHeld === 0) return 0;
+  return Math.round((totalAttended / totalHeld) * 1000) / 10;
+}
 
   /** Shapes a User row into the Student/Lecturer JSON the Flutter app expects. */
   async toProfile(user: User) {
