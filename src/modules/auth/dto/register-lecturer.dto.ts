@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, MinLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, MinLength } from 'class-validator';
 
 export class RegisterLecturerDto {
   @ApiProperty({ example: 'Samuel Johnson' })
@@ -28,4 +28,7 @@ export class RegisterLecturerDto {
 
   @IsNotEmpty()
   biometricToken!: string;
+
+  @IsOptional()
+  title?: string;
 }
