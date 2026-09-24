@@ -23,6 +23,7 @@ export interface CreateLecturerInput {
   password: string;
   department: string;
   faculty: string;
+  title?: string;
   biometricToken: string
 }
 
@@ -65,7 +66,7 @@ export class UsersService {
       department: input.department,
       faculty: input.faculty,
       staffId: input.staffId,
-      title: 'Dr.',
+      title: input.title ?? 'Dr.',
       biometricToken: input.biometricToken,
     });
     return this.usersRepo.save(user);
