@@ -11,7 +11,13 @@ export class LivenessService {
 ){}
 
 async updateLivenessState(allowVerify: boolean) {
-    await this.livenessRepository.update({}, { allowVerify }); 
+    const config = await this.livenessRepository.findOne({});
+    
+    if (config) {
+        await this.livenessRepository.update(config.id, { allowVerify });
+    } else {
+        await this.livenessRepository.save({ allowVerify });
+    }
 
     return {
         success: true,
