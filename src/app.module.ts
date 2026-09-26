@@ -21,6 +21,7 @@ import { Course } from './modules/courses/entities/course.entity';
 import { Enrollment } from './modules/courses/entities/enrollment.entity';
 import { AttendanceSession } from './modules/sessions/entities/attendance-session.entity';
 import { AttendanceRecord } from './modules/attendance/entities/attendance-record.entity';
+import { LivenessModule } from './liveness/liveness.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { AttendanceRecord } from './modules/attendance/entities/attendance-recor
     AttendanceModule,
     ExportModule,
     SyncModule,
+    LivenessModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
