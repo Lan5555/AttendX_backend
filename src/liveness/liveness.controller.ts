@@ -1,4 +1,4 @@
-import { Controller, Get, Patch } from '@nestjs/common';
+import { Body, Controller, Get, Patch } from '@nestjs/common';
 import { LivenessService } from './liveness.service';
 import { LivenessDto } from './dto/liveness.dto';
 import { Public } from 'src/common/decorators/public.decorator';
@@ -8,7 +8,7 @@ export class LivenessController {
   constructor(private readonly livenessService: LivenessService) {}
   @Patch('/update-current-state')
   @Public()
-  async updateLivenessState(body: LivenessDto){
+  async updateLivenessState(@Body() body: LivenessDto){
     return await this.livenessService.updateLivenessState(body.allowVerify);
   }
 
