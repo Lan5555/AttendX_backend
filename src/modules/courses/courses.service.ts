@@ -206,11 +206,7 @@ export class CoursesService {
   }
 
   async findAllCourses(){
-    const courses = await this.coursesRepo.find({
-      where: {
-        lecturer: true
-      }
-    });
+    const courses = await this.coursesRepo.find();
     if(courses){
       return courses
     }
